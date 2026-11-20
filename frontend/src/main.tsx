@@ -9,12 +9,25 @@ const API = import.meta.env.VITE_API_BASE_URL || "/api";
 type RecordValue = Record<string, any>;
 
 async function api(path: string, token?: string, options: RequestInit = {}) {
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
+    });
+  } catch {
+    throw new Error("Cannot reach the Sentinel API. Check the backend service and its allowed site origin, then try again.");
+  }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || "Request failed");
+  if (!response.ok) {
+    const detail = typeof body.detail === "string" ? body.detail : "";
+    if (detail) throw new Error(detail);
+    if (response.status >= 500) throw new Error(`Sentinel API error (HTTP ${response.status}). Check the backend service logs.`);
+    throw new Error(`Sentinel request failed (HTTP ${response.status}). Check the API address and backend service.`);
+  }
+  if (!body || typeof body !== "object" || (path === "/auth/login" && (typeof body.access_token !== "string" || !body.user))) {
+    throw new Error("The login service returned an unexpected response. Check the API address and backend service.");
+  }
   return body;
 }
 
